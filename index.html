@@ -171,6 +171,7 @@
         <li><b>叫貨頻率:</b>月均量以「總量 ÷ 月數」計算,已自然反映隔月/隔季叫貨的頻率;明細中顯示平均間隔、叫貨次數與最近叫貨月供人工判斷。</li>
         <li><b>同期成長率欄位:</b>「視窗合計 vs 去年同期」的年增率,<b>僅供參考顯示,不套用於預估</b>。</li>
         <li><b>季節性(選用):</b>勾選後,若該產品去年有 ≥10 個月出貨紀錄,依去年各月佔比調整預估(調整幅度限 0.5~2 倍)。</li>
+        <li><b>包裝量取整:</b>自產品名稱解析包裝量(如 100's → 100、1000's → 1000、10vials → 10、144Tube → 144),每月預估取整為包裝量的倍數。採累積取整:單月不足一個包裝的量會累積到後面月份出現(例:月均 20、包裝 100 → 約每 5 個月出 100),12 個月總量幾乎不變。</li>
         <li><b>退貨:</b>負數視為退貨,直接淨額計算;視窗內淨額 ≤ 0 的客戶組合不列入預估。</li>
       </ul>
     </details>
@@ -453,16 +454,34 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       P.pairs.push(base);
     });
 
+    // 包裝量:自產品名稱解析(100's → 100、10vials → 10、144Tube → 144)
+    function parsePack(name) {
+      var m = name.match(/(\d+)\s*(?:'s|vials|tube)/i);
+      return m ? parseInt(m[1], 10) : 1;
+    }
+
     // 整理輸出
     var out = [];
     Object.keys(products).sort().forEach(function (p) {
       var P = products[p];
+      var pack = parsePack(p);
+      // 各月預估取整為包裝量的倍數(累積取整:單月不足包裝量的會累積到後面月份出現,12 個月總量幾乎不變)
+      if (pack > 1) {
+        var cum = 0, outCum = 0;
+        fMonths.forEach(function (ym) {
+          cum += P.forecast[ym] || 0;
+          var t = Math.round(cum / pack) * pack;
+          P.forecast[ym] = t - outCum;
+          outCum = t;
+        });
+      }
       var actTotal = 0, fTotal = 0;
       winMonths.forEach(function (ym) { actTotal += P.actual[ym] || 0; });
       fMonths.forEach(function (ym) { fTotal += P.forecast[ym] || 0; });
       P.pairs.sort(function (a, b) { return b.rate - a.rate; });
       out.push({
         product: p,
+        pack: pack,
         actual: P.actual, actualTotal: actTotal,
         forecast: P.forecast, forecastTotal: fTotal,
         growth: prodGrowth[p] || { annual: 0, source: 'none' },
@@ -804,7 +823,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     list.forEach(function (p, idx) {
       var gcls = p.growth.annual >= 0 ? 'gpos' : 'gneg';
       var gsrc = (p.growth.source === 'yoy' ? '與去年同期相比' : (p.growth.source === 'trend' ? '視窗內趨勢' : '—')) + ';僅供參考,不套用於預估';
-      h += '<tr data-i="' + idx + '"><td class="prod" title="' + esc(p.product) + '">' + esc(p.product) +
+      h += '<tr data-i="' + idx + '"><td class="prod" title="' + esc(p.product) + (p.pack > 1 ? '(包裝量 ' + p.pack + ',預估以其倍數取整)' : '') + '">' + esc(p.product) +
         (p.newPairs ? '<span class="newtag">新×' + p.newPairs + '</span>' : '') + '</td>';
       w.forEach(function (m) {
         var v = p.actual[m] || 0; gAct[m] = (gAct[m] || 0) + v;
